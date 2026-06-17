@@ -415,11 +415,11 @@ function Controls({ device, inst, accent, handlers, inputs, selectedInput, onInp
         return (
           <div key={sec || "_"}>
             {sec && <div style={{ marginBottom: 9 }}><Label color={accent}>{sec}</Label></div>}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexWrap: "nowrap", gap: 14, alignItems: "flex-start", overflowX: "auto", paddingBottom: 6 }}>
               {jx.length > 0 && <Jacks inputs={jx} selected={selectedInput} onSelect={onInput} accent={accent} />}
               {knobs.map(c => <Control key={c.id} ctrl={c} inst={inst} accent={accent} {...handlers} />)}
             </div>
-            {switches.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: knobs.length ? 12 : 0 }}>{switches.map(c => <Control key={c.id} ctrl={c} inst={inst} accent={accent} {...handlers} />)}</div>}
+            {switches.length > 0 && <div style={{ display: "flex", flexWrap: "nowrap", gap: 14, marginTop: knobs.length ? 12 : 0, overflowX: "auto", paddingBottom: 4 }}>{switches.map(c => <Control key={c.id} ctrl={c} inst={inst} accent={accent} {...handlers} />)}</div>}
           </div>
         );
       })}
@@ -580,6 +580,7 @@ function GigEditor({ gig, devices, presets, setPresets, updateGig, setOpenGig, s
   const [photos, setPhotos] = useState({});
   const [saved, setSaved] = useState(false);
   const [whenOpen, setWhenOpen] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
   useEffect(() => { (async () => { const out = {}; for (const p of (gig?.photos || [])) { const d = await loadKey("pp2_photo_" + p.id); if (d) out[p.id] = d; } setPhotos(out); })(); }, [gig?.id]);
   const fileRef = useRef(null);
   if (!gig) return null;
@@ -649,13 +650,20 @@ function GigEditor({ gig, devices, presets, setPresets, updateGig, setOpenGig, s
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {gig.photos.map(p => (
               <div key={p.id} style={{ position: "relative" }}>
-                {photos[p.id] ? <img src={photos[p.id]} alt="" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 11, border: "1.5px solid " + T.line }} /> : <div style={{ width: 120, height: 120, borderRadius: 11, background: T.panel2, display: "flex", alignItems: "center", justifyContent: "center" }}><ImageIcon size={22} color={T.faint} /></div>}
+                {photos[p.id] ? <img src={photos[p.id]} alt="" onClick={() => setLightbox(photos[p.id])} style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 11, border: "1.5px solid " + T.line, cursor: "zoom-in" }} /> : <div style={{ width: 120, height: 120, borderRadius: 11, background: T.panel2, display: "flex", alignItems: "center", justifyContent: "center" }}><ImageIcon size={22} color={T.faint} /></div>}
                 <button onClick={() => delPhoto(p.id)} style={{ position: "absolute", top: 5, right: 5, background: "rgba(0,0,0,.65)", border: "none", borderRadius: 7, width: 24, height: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={14} color="#fff" /></button>
               </div>
             ))}
           </div>
         )}
       </Sec>
+
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <img src={lightbox} alt="" style={{ maxWidth: "94vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 8 }} />
+          <button onClick={() => setLightbox(null)} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,.12)", border: "none", borderRadius: 10, width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={20} color="#fff" /></button>
+        </div>
+      )}
 
       <Sec title="Amps" onAdd={() => setModal({ kind: "pickAmp", onPick: addAmp })} addLabel="Add amp">
         {gig.amps.length === 0 && <Empty text="No amps." />}

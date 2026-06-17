@@ -1,25 +1,36 @@
-# Pedal Planner — put it on your phone
+# Pedal Planner — phone install / update
 
-You only need two files: **`index.html`** and **`app.js`**. They're a complete, self-contained web app (no build step, no server). Your settings save in the browser on whatever device you open it on.
+Self-contained web app. No build step, no server. Settings save in the browser on each device.
 
-## Get it online (GitHub Pages)
+## Files to upload
 
-1. Go to **github.com** → **New repository**. Name it `pedal-planner`, set it **Public**, and create it.
-2. On the repo page click **Add file → Upload files**. Drag in **`index.html`** and **`app.js`** (both at the top level, not inside a folder). Commit.
-3. Open **Settings → Pages** (left sidebar).
-4. Under **Build and deployment**, set **Source = Deploy from a branch**, **Branch = `main`**, **Folder = `/ (root)`**, then **Save**.
-5. Wait ~1 minute, refresh the Pages settings page, and copy the live URL it shows — it'll look like `https://YOURNAME.github.io/pedal-planner/`.
+Put **all of these at the top level** of the repo (not inside a folder):
+
+- `index.html`
+- `app.js`
+- `manifest.json`
+- `apple-touch-icon.png`
+- `icon-152.png`, `icon-167.png`, `icon-180.png`, `icon-192.png`, `icon-512.png`
+
+## First-time setup (GitHub Pages)
+
+1. **github.com -> New repository.** Name `pedal-planner`, **Public**, create.
+2. **Add file -> Upload files.** Drag in all the files above. Commit.
+3. **Settings -> Pages.** Source = *Deploy from a branch*, Branch = `main`, Folder = `/ (root)`. Save.
+4. Wait ~1 min, refresh -- copy the URL (`https://YOURNAME.github.io/pedal-planner/`).
 
 ## Put it on your home screen (iPhone / Safari)
 
-1. Open that URL in **Safari** on your phone.
-2. Tap the **Share** button → **Add to Home Screen** → **Add**.
-3. It now launches full-screen from your home screen like a real app.
+1. Open the URL in **Safari**.
+2. **Share -> Add to Home Screen -> Add.** It launches full-screen with the knob icon.
 
-(Android/Chrome: same idea — menu → **Add to Home screen**.)
+(Android/Chrome: menu -> **Add to Home screen**.)
+
+## Updating later
+
+Re-upload the changed files over the old ones (usually just `app.js`; also `index.html` / icons if those changed). On your phone, open the app and pull to refresh, or close and reopen it. If an old version seems stuck, open the URL fresh in Safari, or remove and re-add the home-screen shortcut.
 
 ## Notes
 
-- Data is stored **per device, in that browser**. The phone and your laptop keep separate copies; clearing Safari data wipes it.
-- To update later, just re-upload a new `app.js` (and `index.html` if it changed) over the old ones; reload the page on your phone.
-- Reference **photos** are stored in the browser too — if you add a lot of large ones you may hit the browser's storage limit. Keep it reasonable for now.
+- Data is per-device, per-browser. Phone and laptop keep separate copies; clearing Safari data wipes it.
+- Reference photos live in the browser too -- a lot of large photos can hit the browser's storage limit.
