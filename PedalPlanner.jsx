@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Guitar, Plus, Trash2, Copy, Pencil, ChevronUp, ChevronDown, X, Check,
+  Guitar, Plus, Trash2, Copy, Pencil, ChevronUp, ChevronDown, ChevronRight, X, Check,
   Calendar, RotateCcw, Bookmark, ArrowLeft, Power, Image as ImageIcon,
 } from "lucide-react";
 
@@ -138,7 +138,22 @@ const DEFAULTS = [
 function blankInstance(device) {
   const vals = {};
   (device.controls || []).forEach(c => { vals[c.id] = c.kind === "concentric" ? { inner: 0, outer: 0 } : 0; });
-  return { iid: uid(), deviceId: device.id, vals, knobStyle: device.style || "clock", styleOverrides: {}, sweep: {}, input: device.type === "amp" && device.inputs?.length ? device.inputs[0] : null, engaged: true, notes: "", label: "", spec: null };
+  const d = device.defaults;
+  return {
+    iid: uid(), deviceId: device.id,
+    vals: d?.vals ? { ...vals, ...JSON.parse(JSON.stringify(d.vals)) } : vals,
+    knobStyle: d?.knobStyle || device.style || "default",
+    styleOverrides: d?.styleOverrides ? { ...d.styleOverrides } : {},
+    sweep: d?.sweep ? JSON.parse(JSON.stringify(d.sweep)) : {},
+    input: d?.input ?? (device.type === "amp" && device.inputs?.length ? device.inputs[0] : null),
+    engaged: true, notes: "", label: "", spec: null
+  };
+}
+function masterInst(device) {
+  const i = blankInstance(device); i.iid = "master_" + device.id; return i;
+}
+function withDefaults(device, inst) {
+  return { ...device, defaults: { vals: inst.vals, knobStyle: inst.knobStyle, styleOverrides: inst.styleOverrides, sweep: inst.sweep, input: inst.input } };
 }
 const deviceOf = (inst, devices) => inst.spec || devices.find(d => d.id === inst.deviceId);
 function fromPreset(device, preset) {
@@ -238,16 +253,17 @@ function GenericKnob({ angle, style, sweep, knobColor }) {
 }
 /* the real Fender black-skirt / silver-disc / 1-10 knob */
 function NumberedKnob({ angle, sweep, accent }) {
+  const t = sweep.max - sweep.min;
   const nums = [];
   for (let i = 1; i <= 10; i++) {
-    const a = sweep.min + ((i - 1) / 9) * (sweep.max - sweep.min);
+    const a = sweep.max - ((i - 1) / 9) * t;
     const x = 50 + Math.sin(a * Math.PI / 180) * 33, y = 50 - Math.cos(a * Math.PI / 180) * 33;
-    nums.push(<text key={i} x={x} y={y + 2.7} fontSize="8" fill="#efe7d2" textAnchor="middle" fontFamily="monospace" transform={"rotate(" + angle + " " + x + " " + y + ")"}>{i}</text>);
+    nums.push(<text key={i} x={x} y={y + 2.7} fontSize="8" fill="#efe7d2" textAnchor="middle" fontFamily="monospace" transform={"rotate(" + (-angle) + " " + x + " " + y + ")"}>{i}</text>);
   }
   return (
     <svg viewBox="0 0 100 100" width={62} height={62} style={{ touchAction: "none", cursor: "grab", display: "block" }}>
       <path d="M50 1 L45.5 10 L54.5 10 Z" fill={accent} />
-      <g transform={"rotate(" + (-angle) + " 50 50)"}>
+      <g transform={"rotate(" + angle + " 50 50)"}>
         <circle cx="50" cy="50" r="44" fill="#15161a" stroke="#000" strokeWidth="1" />
         <circle cx="50" cy="50" r="44" fill="none" stroke="#3a3c42" strokeWidth="0.6" />
         {nums}
@@ -311,7 +327,7 @@ function Knob({ angle, style, sweep = DEF_SWEEP, accent, knobColor, label, pinne
           <div style={{ display: "flex", gap: 5, marginBottom: 7 }}>
             <input autoFocus value={txt} onChange={e => setTxt(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { commit(); setOpen(false); } }}
               placeholder={style === "clock" ? "3:30" : style === "numbered" ? "1–10" : "0–10"}
-              style={{ width: 58, background: T.bg, color: T.text, border: "1.5px solid " + T.line, borderRadius: 7, padding: "5px 7px", fontFamily: MONO, fontSize: 12, outline: "none" }} />
+              style={{ width: 64, background: T.bg, color: T.text, border: "1.5px solid " + T.line, borderRadius: 7, padding: "5px 7px", fontFamily: MONO, fontSize: 16, outline: "none" }} />
             <button onClick={() => { commit(); setOpen(false); }} style={{ fontFamily: DISP, fontWeight: 600, fontSize: 11.5, padding: "5px 10px", borderRadius: 7, cursor: "pointer", background: accent, color: T.accentInk, border: "none" }}>set</button>
           </div>
           {[["default", "Default"], ["clock", "Clock"], ["numbered", "Numbered"]].map(([s, l]) => <div key={s} onClick={() => { onStyle(s); setTxt(readout(angle, s, sweep)); }} style={{ ...menuItem, color: style === s ? accent : T.text }}>{l}{style === s && <Check size={13} />}</div>)}
@@ -473,11 +489,12 @@ export default function App() {
   const [presets, setPresets] = useState([]);
   const [tab, setTab] = useState("gigs");
   const [openGig, setOpenGig] = useState(null);
+  const [openDevice, setOpenDevice] = useState(null);
   const [editDevice, setEditDevice] = useState(null);
   const [modal, setModal] = useState(null);
 
   useEffect(() => { (async () => {
-    const norm = (s) => s === "numbered" ? "numbered" : s;
+    const norm = (s) => s === "fender" ? "numbered" : s;
     const fix = (i) => { i.knobStyle = norm(i.knobStyle); if (i.styleOverrides) Object.keys(i.styleOverrides).forEach(k => i.styleOverrides[k] = norm(i.styleOverrides[k])); if (i.spec) i.spec.style = norm(i.spec.style); };
     const d = await loadKey("pp2_devices"); const g = await loadKey("pp2_gigs"); const p = await loadKey("pp2_presets");
     if (d && d.length) { d.forEach(dev => dev.style = norm(dev.style)); setDevices(d); }
@@ -489,25 +506,28 @@ export default function App() {
   useEffect(() => { if (loaded) saveKey("pp2_gigs", gigs); }, [gigs, loaded]);
   useEffect(() => { if (loaded) saveKey("pp2_presets", presets); }, [presets, loaded]);
   const updateGig = (id, fn) => setGigs(gs => gs.map(g => g.id === id ? fn(g) : g));
+  const updateDevice = (id, fn) => setDevices(ds => ds.map(d => d.id === id ? fn(d) : d));
   const flush = () => { saveKey("pp2_gigs", gigs); saveKey("pp2_devices", devices); saveKey("pp2_presets", presets); };
 
   return (
     <div style={{ background: T.bg, color: T.text, fontFamily: BODY, minHeight: 620 }}>
-      <style>{"@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap'); *::-webkit-scrollbar{height:8px;width:8px}*::-webkit-scrollbar-thumb{background:" + T.line + ";border-radius:8px} input::placeholder{color:" + T.faint + "}"}</style>
+      <style>{"@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap'); *::-webkit-scrollbar{height:8px;width:8px}*::-webkit-scrollbar-thumb{background:" + T.line + ";border-radius:8px} input::placeholder{color:" + T.faint + "} @keyframes ppFade{from{opacity:0}to{opacity:1}} @keyframes ppPop{from{transform:scale(.82);opacity:0}to{transform:scale(1);opacity:1}}"}</style>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid " + T.lineSoft, background: T.board }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: T.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><Guitar size={19} color={T.accentInk} /></div>
           <div><div style={{ fontFamily: DISP, fontWeight: 800, fontSize: 18, letterSpacing: ".2px" }}>Pedal Planner</div><div style={{ fontFamily: MONO, fontSize: 10, color: T.faint }}>{persistent ? "saved on this device" : "in-session only"}</div></div>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>{[["gigs", "Gigs"], ["gear", "Gear"], ["presets", "Presets"]].map(([k, l]) => <button key={k} onClick={() => { setTab(k); setOpenGig(null); }} style={{ background: tab === k ? T.panel2 : "transparent", border: "1.5px solid " + (tab === k ? T.line : "transparent"), color: tab === k ? T.text : T.dim, padding: "8px 14px", borderRadius: 9, cursor: "pointer", fontFamily: DISP, fontWeight: 600, fontSize: 13.5 }}>{l}</button>)}</div>
+        <div style={{ display: "flex", gap: 6 }}>{[["gigs", "Gigs"], ["gear", "Gear"], ["presets", "Presets"]].map(([k, l]) => <button key={k} onClick={() => { setTab(k); setOpenGig(null); setOpenDevice(null); }} style={{ background: tab === k ? T.panel2 : "transparent", border: "1.5px solid " + (tab === k ? T.line : "transparent"), color: tab === k ? T.text : T.dim, padding: "8px 14px", borderRadius: 9, cursor: "pointer", fontFamily: DISP, fontWeight: 600, fontSize: 13.5 }}>{l}</button>)}</div>
       </div>
 
       <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
         {!loaded ? <div style={{ color: T.dim }}>Loading…</div>
           : openGig ? <GigEditor gig={gigs.find(g => g.id === openGig)} devices={devices} presets={presets} setPresets={setPresets} updateGig={updateGig} setOpenGig={setOpenGig} setModal={setModal} setEditDevice={setEditDevice} flush={flush} />
             : tab === "gigs" ? <GigsList gigs={gigs} setGigs={setGigs} setOpenGig={setOpenGig} devices={devices} />
-              : tab === "gear" ? <Library devices={devices} setDevices={setDevices} setEditDevice={setEditDevice} setModal={setModal} />
+              : tab === "gear" ? (openDevice && devices.find(d => d.id === openDevice)
+                ? <GearDetail device={devices.find(d => d.id === openDevice)} updateDevice={updateDevice} setEditDevice={setEditDevice} onBack={() => setOpenDevice(null)} flush={flush} />
+                : <Library devices={devices} setDevices={setDevices} setEditDevice={setEditDevice} setModal={setModal} setOpenDevice={setOpenDevice} />)
                 : <Presets presets={presets} setPresets={setPresets} devices={devices} />}
       </div>
 
@@ -659,9 +679,9 @@ function GigEditor({ gig, devices, presets, setPresets, updateGig, setOpenGig, s
       </Sec>
 
       {lightbox && (
-        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <img src={lightbox} alt="" style={{ maxWidth: "94vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 8 }} />
-          <button onClick={() => setLightbox(null)} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,.12)", border: "none", borderRadius: 10, width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={20} color="#fff" /></button>
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, animation: "ppFade .18s ease-out" }}>
+          <img src={lightbox} alt="" style={{ maxWidth: "94vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 8, animation: "ppPop .24s cubic-bezier(.2,.85,.3,1.15)" }} />
+          <button onClick={() => setLightbox(null)} style={{ position: "absolute", top: 16, right: 16, background: "rgba(20,22,26,.85)", border: "1.5px solid rgba(255,255,255,.25)", borderRadius: "50%", width: 42, height: 42, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={22} color="#fff" /></button>
         </div>
       )}
 
@@ -704,13 +724,15 @@ function Sec({ title, titleNode, onAdd, addLabel = "Add", extra, children }) {
 }
 
 /* ============================ LIBRARY ============================ */
-function Library({ devices, setDevices, setEditDevice, setModal }) {
+function Library({ devices, setDevices, setEditDevice, setModal, setOpenDevice }) {
   const dup = (d) => { const c = JSON.parse(JSON.stringify(d)); c.id = uid(); c.preloaded = false; c.name = d.name + " (copy)"; c.controls = c.controls.map(x => ({ ...x, id: uid() })); setDevices(ds => [...ds, c]); };
   const Card = (d) => (
     <div key={d.id} style={{ background: T.panel, border: "1.5px solid " + T.line, borderRadius: 13, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-      <div style={{ width: 32, height: 32, borderRadius: 8, background: d.color, border: "1px solid rgba(255,255,255,.14)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 11, height: 11, borderRadius: "50%", background: d.knob }} /></div>
-      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 14 }}>{d.name}</div><div style={{ fontFamily: MONO, fontSize: 11, color: T.faint }}>{d.controls.filter(c => c.kind !== "switch").length} knobs{d.type === "amp" ? " · " + d.inputs.length + " inputs" : ""}{d.isHead ? " · head" : ""}{d.preloaded ? " · preloaded" : ""}</div></div>
-      <Btn small kind="quiet" onClick={() => setEditDevice({ draft: JSON.parse(JSON.stringify(d)), onSave: (nd) => setDevices(ds => ds.map(x => x.id === nd.id ? nd : x)) })}><Pencil size={13} /></Btn>
+      <div onClick={() => setOpenDevice(d.id)} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: d.color, border: "1px solid rgba(255,255,255,.14)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><div style={{ width: 11, height: 11, borderRadius: "50%", background: d.knob }} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 14 }}>{d.name}</div><div style={{ fontFamily: MONO, fontSize: 11, color: T.faint }}>{d.controls.filter(c => c.kind !== "switch").length} knobs{d.type === "amp" ? " · " + d.inputs.length + " inputs" : ""}{d.isHead ? " · head" : ""}{d.preloaded ? " · preloaded" : ""}</div></div>
+        <ChevronRight size={16} color={T.faint} />
+      </div>
       <Btn small kind="quiet" onClick={() => dup(d)}><Copy size={13} /></Btn>
       <Btn small kind="quiet" onClick={() => setDevices(ds => ds.filter(x => x.id !== d.id))}><Trash2 size={13} color={T.red} /></Btn>
     </div>
@@ -725,6 +747,43 @@ function Library({ devices, setDevices, setEditDevice, setModal }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>{devices.filter(d => d.type === "amp").map(Card)}</div>
       <div style={{ marginBottom: 9 }}><Label color={T.accent}>pedals</Label></div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{devices.filter(d => d.type === "pedal").map(Card)}</div>
+    </div>
+  );
+}
+
+function GearDetail({ device, updateDevice, setEditDevice, onBack, flush }) {
+  const [saved, setSaved] = useState(false);
+  const inst = masterInst(device);
+  const isPedal = device.type === "pedal";
+  const commit = (fn) => updateDevice(device.id, d => withDefaults(d, fn(masterInst(d))));
+  const handlers = {
+    onVal: (cid, v) => commit(i => ({ ...i, vals: { ...i.vals, [cid]: v } })),
+    onStyle: (cid, s) => commit(i => ({ ...i, styleOverrides: { ...i.styleOverrides, [cid]: s } })),
+    onUnpin: (cid) => commit(i => { const o = { ...i.styleOverrides }; delete o[cid]; return { ...i, styleOverrides: o }; }),
+    onSweep: (cid, s) => commit(i => ({ ...i, sweep: { ...i.sweep, [cid]: s } })),
+  };
+  const setStyle = (s) => updateDevice(device.id, d => ({ ...withDefaults(d, { ...masterInst(d), knobStyle: s }), style: s }));
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <Btn kind="quiet" onClick={onBack} style={{ paddingLeft: 0 }}><ArrowLeft size={15} /> All gear</Btn>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn small onClick={() => setEditDevice({ draft: JSON.parse(JSON.stringify(device)), onSave: (nd) => updateDevice(device.id, () => nd) })}><Pencil size={13} /> Edit layout</Btn>
+          <Btn kind="primary" onClick={() => { flush && flush(); setSaved(true); setTimeout(() => setSaved(false), 1500); }}>{saved ? <><Check size={15} /> Saved</> : "Save"}</Btn>
+        </div>
+      </div>
+      <div style={{ background: isPedal ? T.panel : T.board, border: "1.5px solid " + T.line, borderRadius: 16, padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: device.color, border: "1px solid rgba(255,255,255,.14)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 10, height: 10, borderRadius: "50%", background: device.knob }} /></div>
+          <div style={{ fontFamily: DISP, fontWeight: 800, fontSize: 18 }}>{device.name}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <Label>knobs</Label>
+          <div style={{ display: "inline-flex", gap: 3, background: T.bg, padding: 3, borderRadius: 9, border: "1.5px solid " + T.line }}>{[["default", "Default"], ["clock", "Clock"], ["numbered", "Numbered"]].map(([s, l]) => <button key={s} onClick={() => setStyle(s)} style={{ border: "none", cursor: "pointer", fontFamily: DISP, fontWeight: 600, fontSize: 11.5, padding: "5px 10px", borderRadius: 7, background: inst.knobStyle === s ? T.accent : "transparent", color: inst.knobStyle === s ? T.accentInk : T.dim }}>{l}</button>)}</div>
+        </div>
+        <Controls device={device} inst={inst} accent={T.accent} handlers={handlers} inputs={!isPedal ? device.inputs : []} selectedInput={inst.input} onInput={(v) => commit(i => ({ ...i, input: v }))} />
+      </div>
+      <div style={{ color: T.faint, fontSize: 12, marginTop: 10, fontFamily: BODY }}>This is the master. What you set here is the starting point when you add {device.name} to a gig. Changing it inside a gig only affects that gig. Use Edit layout to add or rename knobs.</div>
     </div>
   );
 }
