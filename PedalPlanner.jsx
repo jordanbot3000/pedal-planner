@@ -66,15 +66,46 @@ function valueToAngle(v, style, sweep) {
   const f = style === "numbered" ? (num - 1) / 9 : num / 10;
   return clamp(sweep.min + f * (sweep.max - sweep.min), sweep.min, sweep.max);
 }
-function fmtTime(t) { if (!t) return ""; const [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "PM" : "AM"; const hh = ((h + 11) % 12) + 1; return hh + ":" + String(m).padStart(2, "0") + " " + ap; }
+const isoOf = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 function fmtGig(g) {
-  if (!g.startDate) return "No date set";
+  if (!g.startDate) return "Add date";
   const d1 = new Date(g.startDate + "T00:00"); const o = { month: "short", day: "numeric" };
   let s = d1.toLocaleDateString(undefined, o);
   if (g.endDate && g.endDate !== g.startDate) { const d2 = new Date(g.endDate + "T00:00"); s += " – " + d2.toLocaleDateString(undefined, d2.getMonth() === d1.getMonth() ? { day: "numeric" } : o); }
-  if (g.allDay) return s;
-  if (g.startTime) s += " · " + fmtTime(g.startTime) + (g.endTime ? "–" + fmtTime(g.endTime) : "");
   return s;
+}
+function MiniCal({ start, end, onPick }) {
+  const init = start ? new Date(start + "T00:00") : new Date();
+  const [vy, setVy] = useState(init.getFullYear());
+  const [vm, setVm] = useState(init.getMonth());
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const dows = ["S", "M", "T", "W", "T", "F", "S"];
+  const startDow = new Date(vy, vm, 1).getDay();
+  const days = new Date(vy, vm + 1, 0).getDate();
+  const today = isoOf(new Date());
+  const iso = (d) => vy + "-" + String(vm + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  const cells = []; for (let i = 0; i < startDow; i++) cells.push(null); for (let d = 1; d <= days; d++) cells.push(d);
+  const click = (d) => { const v = iso(d); if (!start || (start && end)) onPick(v, ""); else if (v < start) onPick(v, ""); else onPick(start, v === start ? "" : v); };
+  const nav = (delta) => { let m = vm + delta, y = vy; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } setVm(m); setVy(y); };
+  const navBtn = { width: 34, height: 34, borderRadius: 9, border: "none", background: T.panel3, color: T.text, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center" };
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <button onClick={() => nav(-1)} style={navBtn}>‹</button>
+        <div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 15 }}>{months[vm]} {vy}</div>
+        <button onClick={() => nav(1)} style={navBtn}>›</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 4 }}>{dows.map((d, i) => <div key={i} style={{ textAlign: "center", fontFamily: MONO, fontSize: 10, color: T.faint, padding: "2px 0" }}>{d}</div>)}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+        {cells.map((d, i) => {
+          if (d == null) return <div key={i} />;
+          const v = iso(d); const isStart = v === start, isEnd = v === end, between = start && end && v > start && v < end;
+          const sel = isStart || isEnd;
+          return <button key={i} onClick={() => click(d)} style={{ aspectRatio: "1", border: "none", cursor: "pointer", borderRadius: 9, fontFamily: BODY, fontSize: 14, fontWeight: sel ? 700 : 500, background: sel ? T.accent : between ? "rgba(69,179,164,.18)" : "transparent", color: sel ? T.accentInk : T.text, outline: v === today && !sel ? "1.5px solid " + T.line : "none" }}>{d}</button>;
+        })}
+      </div>
+    </div>
+  );
 }
 
 /* ---------------- control builders ---------------- */
@@ -107,8 +138,8 @@ const DEFAULTS = [
   { id: "amp_twin70", type: "amp", name: "Fender Twin Reverb ('70s SF)", color: "#b7bcc2", knob: "#1c1e23", isHead: false, preloaded: true, style: "numbered", inputs: ["Normal 1", "Normal 2", "Vibrato 1", "Vibrato 2"], controls: twin("tw_", true) },
   { id: "amp_minitwin", type: "amp", name: "Mini Twin (custom head)", color: "#1f3b2c", knob: "#e7e0cd", isHead: true, preloaded: true, style: "numbered", inputs: ["Normal 1", "Normal 2", "Vibrato 1", "Vibrato 2"], controls: twin("mt_", true) },
   {
-    id: "amp_nashville400", type: "amp", name: "Peavey Nashville 400", color: "#15171c", knob: "#3f8fdc", isHead: false, preloaded: true, style: "numbered", inputs: ["High Gain", "Low Gain"],
-    controls: [K("nv_pre", "Pre gain"), K("nv_post", "Post gain"), K("nv_low", "Low"), K("nv_mid", "Mid"), K("nv_high", "High"), K("nv_shift", "Shift"), K("nv_pres", "Presence"), K("nv_rev", "Reverb"), SW("nv_br", "Bright", ["Off", "On"])],
+    id: "amp_nashville400", type: "amp", name: "Peavey Nashville 400", color: "#15171c", knob: "#3f8fdc", style: "numbered", inputs: ["High Gain", "Low Gain"],
+    controls: [{ ...K("nv_pre", "Pre gain"), pull: true, pullLabel: "Bright" }, K("nv_post", "Post gain"), K("nv_low", "Low"), { id: "nv_midshift", kind: "concentric", name: "Mid / Shift", outer: "Mid", inner: "Shift" }, K("nv_high", "High"), K("nv_pres", "Presence"), K("nv_rev", "Reverb")],
   },
   {
     id: "amp_redknob", type: "amp", name: "Fender Deluxe (red knob)", color: "#15171c", knob: "#d23b2f", isHead: false, preloaded: true, style: "numbered", inputs: ["Input"],
@@ -215,7 +246,7 @@ function Btn({ children, onClick, kind = "ghost", small, disabled, style, title 
     onMouseLeave={e => { if (kind !== "primary") e.currentTarget.style.borderColor = kind === "quiet" ? "transparent" : T.line; }}>{children}</button>;
 }
 const Label = ({ children, color = T.faint }) => <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: ".5px", color, textTransform: "lowercase" }}>{children}</span>;
-const inputStyle = { width: "100%", boxSizing: "border-box", background: T.bg, color: T.text, border: "1.5px solid " + T.line, borderRadius: 9, padding: "9px 11px", fontFamily: BODY, fontSize: 14, outline: "none" };
+const inputStyle = { width: "100%", boxSizing: "border-box", background: T.bg, color: T.text, border: "1.5px solid " + T.line, borderRadius: 9, padding: "10px 12px", fontFamily: BODY, fontSize: 16, outline: "none" };
 function Field({ label, children }) { return <label style={{ display: "block" }}><div style={{ marginBottom: 5 }}><Label>{label}</Label></div>{children}</label>; }
 function Modal({ children, onClose, title }) {
   return <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(6,8,11,.74)", zIndex: 50, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "44px 16px", overflowY: "auto" }}>
@@ -228,8 +259,8 @@ function Modal({ children, onClose, title }) {
 const Empty = ({ text }) => <div style={{ border: "1.5px dashed " + T.line, borderRadius: 11, padding: 16, color: T.faint, fontSize: 13, fontFamily: BODY }}>{text}</div>;
 
 /* ============================ KNOBS ============================ */
-/* generic metallic knob — used by default (0-10 ring) and clock (clock ring) */
-function GenericKnob({ angle, style, sweep, knobColor }) {
+const KNOB_DESIGNS = [["line", "Line"], ["knurled", "Knurled"], ["chickenhead", "Chicken-head"], ["dome", "Dome"], ["tophat", "Top-hat"]];
+function GenericKnob({ angle, style, sweep, knobColor, design }) {
   const gid = useRef("g" + uid()).current;
   const ring = [];
   if (style === "default") {
@@ -240,35 +271,64 @@ function GenericKnob({ angle, style, sweep, knobColor }) {
     for (let h = 0; h < 12; h++) { const a = h * 30 * Math.PI / 180, big = h % 3 === 0;
       ring.push(<line key={"c" + h} x1={50 + Math.sin(a) * 37} y1={50 - Math.cos(a) * 37} x2={50 + Math.sin(a) * 41} y2={50 - Math.cos(a) * 41} stroke="#8b929c" strokeWidth={big ? 1.5 : 0.7} opacity={big ? 0.9 : 0.45} />); }
   }
-  return (
-    <svg viewBox="0 0 100 100" width={62} height={62} style={{ touchAction: "none", cursor: "grab", display: "block" }}>
-      <defs><radialGradient id={gid} cx="42%" cy="36%" r="72%"><stop offset="0%" stopColor="#363c45" /><stop offset="60%" stopColor="#20242b" /><stop offset="100%" stopColor="#101216" /></radialGradient></defs>
-      {ring}
+  const rot = "rotate(" + angle + " 50 50)";
+  const lineCol = knobColor;
+  let body;
+  if (design === "knurled") {
+    const knurl = []; for (let i = 0; i < 48; i++) { const a = i * 7.5 * Math.PI / 180; knurl.push(<line key={i} x1={50 + Math.sin(a) * 28} y1={50 - Math.cos(a) * 28} x2={50 + Math.sin(a) * 33} y2={50 - Math.cos(a) * 33} stroke="#6b7178" strokeWidth="1" opacity=".55" />); }
+    body = <><defs><radialGradient id={gid} cx="40%" cy="34%" r="75%"><stop offset="0%" stopColor="#eef1f4" /><stop offset="55%" stopColor="#c2c8cf" /><stop offset="100%" stopColor="#7e848c" /></radialGradient></defs>
+      <circle cx="50" cy="50" r="33" fill={"url(#" + gid + ")"} stroke="#5b616a" strokeWidth="1" />{knurl}
+      <circle cx="50" cy="50" r="21" fill="#d7dbe0" stroke="#aeb4bd" strokeWidth="0.8" />
+      <g transform={rot}><rect x="48.6" y="15" width="3" height="20" rx="1.5" fill={lineCol === "#eef1f4" ? "#1c1e23" : lineCol} /></g>
+      <circle cx="50" cy="50" r="3.2" fill="#8a9099" /></>;
+  } else if (design === "chickenhead") {
+    body = <g transform={rot}>
+      <circle cx="50" cy="50" r="13" fill="#16181c" stroke="#3a3f48" strokeWidth="1" />
+      <path d="M50 7 L58 31 Q50 27 42 31 Z" fill={lineCol} stroke="#00000033" strokeWidth="0.5" />
+      <circle cx="50" cy="50" r="3.6" fill="#0e0f12" /></g>;
+  } else if (design === "dome") {
+    body = <><defs><radialGradient id={gid} cx="42%" cy="30%" r="78%"><stop offset="0%" stopColor="#434a54" /><stop offset="65%" stopColor="#202429" /><stop offset="100%" stopColor="#0c0e11" /></radialGradient></defs>
+      <circle cx="50" cy="50" r="33" fill={"url(#" + gid + ")"} stroke="#0a0b0d" strokeWidth="1" />
+      <g transform={rot}><circle cx="50" cy="23" r="3.6" fill={lineCol} /></g></>;
+  } else if (design === "tophat") {
+    body = <><circle cx="50" cy="50" r="34" fill="#15171b" stroke="#000" strokeWidth="1" />
+      <circle cx="50" cy="50" r="25" fill="#1d2026" stroke="#33373f" strokeWidth="1" />
+      <circle cx="50" cy="50" r="15" fill="#24282f" />
+      <g transform={rot}><rect x="48.7" y="13" width="2.6" height="22" rx="1.3" fill={lineCol} /></g>
+      <circle cx="50" cy="50" r="3" fill="#0e0f12" /></>;
+  } else {
+    body = <><defs><radialGradient id={gid} cx="42%" cy="36%" r="72%"><stop offset="0%" stopColor="#363c45" /><stop offset="60%" stopColor="#20242b" /><stop offset="100%" stopColor="#101216" /></radialGradient></defs>
       <circle cx="50" cy="50" r="34" fill={"url(#" + gid + ")"} stroke="#0a0b0d" strokeWidth="1.5" />
       <circle cx="50" cy="50" r="34" fill="none" stroke="#454b55" strokeWidth="0.6" opacity="0.6" />
-      <g transform={"rotate(" + angle + " 50 50)"}><rect x="48.6" y="13" width="2.8" height="25" rx="1.4" fill={knobColor} /></g>
-      <circle cx="50" cy="50" r="3.6" fill="#0e0f12" stroke="#454b55" strokeWidth="1" />
-    </svg>
-  );
+      <g transform={rot}><rect x="48.6" y="13" width="2.8" height="25" rx="1.4" fill={lineCol} /></g>
+      <circle cx="50" cy="50" r="3.6" fill="#0e0f12" stroke="#454b55" strokeWidth="1" /></>;
+  }
+  return <svg viewBox="0 0 100 100" width={62} height={62} style={{ touchAction: "none", cursor: "grab", display: "block" }}>{ring}{body}</svg>;
 }
-/* the real Fender black-skirt / silver-disc / 1-10 knob */
-function NumberedKnob({ angle, sweep, accent }) {
+const SKIRTS = {
+  blackface: { skirt: "#15161a", rim: "#3a3c42", disc: "#cfd2d6", discRim: "#8b9098", num: "#efe7d2" },
+  silver: { skirt: "#c9ccd1", rim: "#8b9098", disc: "#1a1c20", discRim: "#05060a", num: "#1a1c20" },
+  gold: { skirt: "#161103", rim: "#5a4a1e", disc: "#c9a53f", discRim: "#7c6322", num: "#e8c659" },
+};
+const SKIRT_DESIGNS = [["blackface", "Blackface"], ["silver", "Silverface"], ["gold", "Gold"]];
+function NumberedKnob({ angle, sweep, accent, skirt }) {
+  const s = SKIRTS[skirt] || SKIRTS.blackface;
   const t = sweep.max - sweep.min;
   const nums = [];
   for (let i = 1; i <= 10; i++) {
     const a = sweep.max - ((i - 1) / 9) * t;
     const x = 50 + Math.sin(a * Math.PI / 180) * 33, y = 50 - Math.cos(a * Math.PI / 180) * 33;
-    nums.push(<text key={i} x={x} y={y + 2.7} fontSize="8" fill="#efe7d2" textAnchor="middle" fontFamily="monospace" transform={"rotate(" + (-angle) + " " + x + " " + y + ")"}>{i}</text>);
+    nums.push(<text key={i} x={x} y={y + 2.7} fontSize="8" fill={s.num} textAnchor="middle" fontFamily="monospace" transform={"rotate(" + (-angle) + " " + x + " " + y + ")"}>{i}</text>);
   }
   return (
     <svg viewBox="0 0 100 100" width={62} height={62} style={{ touchAction: "none", cursor: "grab", display: "block" }}>
       <path d="M50 1 L45.5 10 L54.5 10 Z" fill={accent} />
       <g transform={"rotate(" + angle + " 50 50)"}>
-        <circle cx="50" cy="50" r="44" fill="#15161a" stroke="#000" strokeWidth="1" />
-        <circle cx="50" cy="50" r="44" fill="none" stroke="#3a3c42" strokeWidth="0.6" />
+        <circle cx="50" cy="50" r="44" fill={s.skirt} stroke="#000" strokeWidth="1" />
+        <circle cx="50" cy="50" r="44" fill="none" stroke={s.rim} strokeWidth="0.6" />
         {nums}
-        <circle cx="50" cy="50" r="22" fill="#cfd2d6" stroke="#8b9098" strokeWidth="1.2" />
-        <circle cx="50" cy="50" r="22" fill="none" stroke="#fff" strokeWidth="0.5" opacity="0.4" />
+        <circle cx="50" cy="50" r="22" fill={s.disc} stroke={s.discRim} strokeWidth="1.2" />
+        <circle cx="50" cy="50" r="22" fill="none" stroke="#fff" strokeWidth="0.5" opacity="0.3" />
       </g>
     </svg>
   );
@@ -288,7 +348,7 @@ function DeadSpaceArc({ sweep, accent }) {
     </svg>
   );
 }
-function Knob({ angle, style, sweep = DEF_SWEEP, accent, knobColor, label, pinned, onChange, onStyle, onUnpin, onSweep }) {
+function Knob({ angle, style, sweep = DEF_SWEEP, accent, knobColor, design, skirt, label, pinned, onChange, onStyle, onUnpin, onSweep }) {
   const ref = useRef(null);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -296,7 +356,7 @@ function Knob({ angle, style, sweep = DEF_SWEEP, accent, knobColor, label, pinne
   const start = (e) => {
     e.preventDefault();
     const rect = ref.current.getBoundingClientRect();
-    if (style === "numbered") {
+    if (style === "numbered" || style === "clock") {
       const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
       const raw = (ev) => { const p = ev.touches ? ev.touches[0] : ev; return Math.atan2(p.clientX - cx, -(p.clientY - cy)) * 180 / Math.PI; };
       let prev = raw(e); let acc = angle;
@@ -316,7 +376,7 @@ function Knob({ angle, style, sweep = DEF_SWEEP, accent, knobColor, label, pinne
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", width: 72 }}>
       <div ref={ref} onPointerDown={start}>
-        {style === "numbered" ? <NumberedKnob angle={angle} sweep={sweep} accent={accent} /> : <GenericKnob angle={angle} style={style} sweep={sweep} knobColor={knobColor} />}
+        {(style === "numbered" || style === "clock") ? <NumberedKnob angle={angle} sweep={sweep} accent={accent} skirt={skirt} /> : <GenericKnob angle={angle} style={style} sweep={sweep} knobColor={knobColor} design={design} />}
       </div>
       <div style={{ fontSize: 11, color: T.dim, fontFamily: BODY, marginTop: 4, textAlign: "center", lineHeight: 1.15 }}>{label}</div>
       <div onClick={toggle} style={{ marginTop: 3, display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", fontFamily: MONO, fontSize: 11.5, fontWeight: 700, color: T.text, background: T.bg, border: "1.5px solid " + (pinned ? accent : T.line), borderRadius: 7, padding: "2px 7px" }}>
@@ -331,7 +391,7 @@ function Knob({ angle, style, sweep = DEF_SWEEP, accent, knobColor, label, pinne
             <button onClick={() => { commit(); setOpen(false); }} style={{ fontFamily: DISP, fontWeight: 600, fontSize: 11.5, padding: "5px 10px", borderRadius: 7, cursor: "pointer", background: accent, color: T.accentInk, border: "none" }}>set</button>
           </div>
           {[["default", "Default"], ["clock", "Clock"], ["numbered", "Numbered"]].map(([s, l]) => <div key={s} onClick={() => { onStyle(s); setTxt(readout(angle, s, sweep)); }} style={{ ...menuItem, color: style === s ? accent : T.text }}>{l}{style === s && <Check size={13} />}</div>)}
-          <div onClick={() => setEditing(v => !v)} style={menuItem}>Edit{editing && <Check size={13} />}</div>
+          <div onClick={() => setEditing(v => !v)} style={menuItem}>Edit…{editing && <Check size={13} />}</div>
           {editing && (
             <div style={{ padding: "6px 2px 2px", textAlign: "center" }}>
               <DeadSpaceArc sweep={sweep} accent={accent} />
@@ -412,7 +472,12 @@ function Control({ ctrl, inst, accent, onVal, onStyle, onUnpin, onSweep }) {
   if (ctrl.kind === "switch") return <Switch name={ctrl.name} options={ctrl.options} accent={accent} value={{ index: inst.vals[ctrl.id] || 0, onChange: (i) => onVal(ctrl.id, i) }} />;
   if (ctrl.kind === "selector") return <Selector name={ctrl.name} options={ctrl.options} accent={accent} value={{ index: inst.vals[ctrl.id] || 0, onChange: (i) => onVal(ctrl.id, i) }} />;
   if (ctrl.kind === "concentric") return <Concentric style={effStyle} sweep={sweep} accent={accent} knobColor={knobColor} value={inst.vals[ctrl.id] || { inner: 0, outer: 0 }} control={{ inner: ctrl.inner, outer: ctrl.outer, onChange: (v) => onVal(ctrl.id, v) }} />;
-  return <Knob angle={inst.vals[ctrl.id] || 0} style={effStyle} sweep={sweep} accent={accent} knobColor={knobColor} label={ctrl.name} pinned={!!inst.styleOverrides[ctrl.id]} onChange={(a) => onVal(ctrl.id, a)} onStyle={(s) => onStyle(ctrl.id, s)} onUnpin={() => onUnpin(ctrl.id)} onSweep={(s) => onSweep(ctrl.id, s)} />;
+  const knob = <Knob angle={inst.vals[ctrl.id] || 0} style={effStyle} sweep={sweep} accent={accent} knobColor={knobColor} design={ctrl.design} skirt={ctrl.skirt} label={ctrl.name} pinned={!!inst.styleOverrides[ctrl.id]} onChange={(a) => onVal(ctrl.id, a)} onStyle={(s) => onStyle(ctrl.id, s)} onUnpin={() => onUnpin(ctrl.id)} onSweep={(s) => onSweep(ctrl.id, s)} />;
+  if (ctrl.pull) {
+    const pid = ctrl.id + "__pull"; const pulled = !!inst.vals[pid];
+    return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 72 }}>{knob}<button onClick={() => onVal(pid, pulled ? 0 : 1)} style={{ marginTop: 6, fontFamily: DISP, fontWeight: 700, fontSize: 9.5, letterSpacing: ".5px", padding: "3px 9px", borderRadius: 6, cursor: "pointer", border: "1.5px solid " + (pulled ? accent : T.line), background: pulled ? accent : T.bg, color: pulled ? T.accentInk : T.dim, whiteSpace: "nowrap" }}>↑ {(ctrl.pullLabel || "PULL").toUpperCase()}</button></div>;
+  }
+  return knob;
 }
 function Controls({ device, inst, accent, handlers, inputs, selectedInput, onInput }) {
   const order = []; const seen = new Set();
@@ -455,27 +520,25 @@ function Jacks({ inputs, selected, onSelect, accent }) {
 }
 
 /* ============================ INSTANCE CARD ============================ */
-function InstanceCard({ device, inst, displayName, accent, isPedal, order, count, onRename, onMove, onEdit, onDelete, onSavePreset, handlers, onToggleEngaged, onInput }) {
+function InstanceCard({ device, inst, displayName, accent, isPedal, order, count, onRename, onMove, onEdit, onDelete, onSavePreset, handlers, onInput }) {
   const light = device.color && /^#(e|f|c|d|b)/i.test(device.color);
   const ink = light ? "#1c1e23" : (device.face || T.text);
   return (
-    <div style={{ background: T.panel, border: "1.5px solid " + T.line, borderRadius: 14, overflow: "visible" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", borderTopLeftRadius: 13, borderTopRightRadius: 13, borderBottom: "1px solid " + T.lineSoft, background: isPedal ? device.color : T.panel2 }}>
-        {isPedal && <button onClick={onToggleEngaged} title="Engaged for this gig" style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, padding: 0 }}><span style={{ width: 11, height: 11, borderRadius: "50%", background: inst.engaged ? T.led : "#444", boxShadow: inst.engaged ? "0 0 8px 1px rgba(63,207,116,.7)" : "none" }} /><Power size={15} color={inst.engaged ? ink : "#777"} /></button>}
-        {order != null && <div style={{ display: "flex", flexDirection: "column" }}><ChevronUp size={14} color={order > 1 ? (light ? "#555" : T.dim) : "#3a3f48"} style={{ cursor: order > 1 ? "pointer" : "default" }} onClick={() => order > 1 && onMove(-1)} /><ChevronDown size={14} color={order < count ? (light ? "#555" : T.dim) : "#3a3f48"} style={{ cursor: order < count ? "pointer" : "default" }} onClick={() => order < count && onMove(1)} /></div>}
-        <input value={inst.label} onChange={e => onRename(e.target.value)} placeholder={displayName} style={{ flex: "0 0 auto", width: 86, background: "transparent", border: "none", outline: "none", fontFamily: MONO, fontSize: 11, color: light ? "#555" : T.dim }} />
-        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 15, color: ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{device.name}</div>{device.isHead && <span style={{ fontFamily: MONO, fontSize: 10, color: light ? "#555" : T.faint }}>head</span>}</div>
-        <Btn small kind="quiet" onClick={onEdit} title="Edit just this one"><Pencil size={13} color={light ? "#555" : T.dim} /></Btn>
-        {isPedal && <Btn small kind="quiet" onClick={onSavePreset} title="Save as preset"><Bookmark size={13} color={light ? "#555" : T.dim} /></Btn>}
-        <Btn small kind="quiet" onClick={onDelete}><Trash2 size={14} color={light ? "#a33" : T.red} /></Btn>
+    <div style={{ background: T.panel, border: "1.5px solid " + (isPedal ? device.color : T.line), borderRadius: 14, overflow: "visible" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", borderTopLeftRadius: 12.5, borderTopRightRadius: 12.5, borderBottom: "1px solid " + T.lineSoft, background: isPedal ? device.color : T.panel2 }}>
+        {order != null && <div style={{ display: "flex", flexDirection: "column" }}><ChevronUp size={16} color={order > 1 ? (light ? "#555" : T.dim) : "#3a3f48"} style={{ cursor: order > 1 ? "pointer" : "default" }} onClick={() => order > 1 && onMove(-1)} /><ChevronDown size={16} color={order < count ? (light ? "#555" : T.dim) : "#3a3f48"} style={{ cursor: order < count ? "pointer" : "default" }} onClick={() => order < count && onMove(1)} /></div>}
+        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 15, color: ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{device.name}</div><input value={inst.label} onChange={e => onRename(e.target.value)} placeholder={"label (e.g. " + displayName + ")"} style={{ width: "100%", background: "transparent", border: "none", outline: "none", fontFamily: MONO, fontSize: 11, color: light ? "#5a5a5a" : T.dim, padding: 0 }} /></div>
+        <Btn small kind="quiet" onClick={onEdit} title="Edit just this one"><Pencil size={14} color={light ? "#555" : T.dim} /></Btn>
+        {isPedal && <Btn small kind="quiet" onClick={onSavePreset} title="Save as preset"><Bookmark size={14} color={light ? "#555" : T.dim} /></Btn>}
+        <Btn small kind="quiet" onClick={onDelete}><Trash2 size={15} color={light ? "#a33" : T.red} /></Btn>
       </div>
-      <div style={{ padding: 15, opacity: isPedal && !inst.engaged ? 0.45 : 1 }}>
+      <div style={{ padding: 15 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <Label>knobs</Label>
           <div style={{ display: "inline-flex", gap: 3, background: T.bg, padding: 3, borderRadius: 9, border: "1.5px solid " + T.line }}>{[["default", "Default"], ["clock", "Clock"], ["numbered", "Numbered"]].map(([s, l]) => <button key={s} onClick={() => handlers.onDeviceStyle(s)} style={{ border: "none", cursor: "pointer", fontFamily: DISP, fontWeight: 600, fontSize: 11.5, padding: "5px 10px", borderRadius: 7, background: inst.knobStyle === s ? accent : "transparent", color: inst.knobStyle === s ? T.accentInk : T.dim }}>{l}</button>)}</div>
         </div>
         <Controls device={device} inst={inst} accent={accent} handlers={handlers} inputs={!isPedal ? device.inputs : []} selectedInput={inst.input} onInput={onInput} />
-        <input style={{ ...inputStyle, marginTop: 14, fontSize: 13 }} placeholder="Notes…" value={inst.notes} onChange={e => handlers.onNotes(e.target.value)} />
+        <input style={{ ...inputStyle, marginTop: 14 }} placeholder="Notes…" value={inst.notes} onChange={e => handlers.onNotes(e.target.value)} />
       </div>
     </div>
   );
@@ -490,6 +553,7 @@ export default function App() {
   const [tab, setTab] = useState("gigs");
   const [openGig, setOpenGig] = useState(null);
   const [openDevice, setOpenDevice] = useState(null);
+  const [lastDevice, setLastDevice] = useState(null);
   const [editDevice, setEditDevice] = useState(null);
   const [modal, setModal] = useState(null);
 
@@ -511,23 +575,23 @@ export default function App() {
 
   return (
     <div style={{ background: T.bg, color: T.text, fontFamily: BODY, minHeight: 620 }}>
-      <style>{"@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap'); *::-webkit-scrollbar{height:8px;width:8px}*::-webkit-scrollbar-thumb{background:" + T.line + ";border-radius:8px} input::placeholder{color:" + T.faint + "} @keyframes ppFade{from{opacity:0}to{opacity:1}} @keyframes ppPop{from{transform:scale(.82);opacity:0}to{transform:scale(1);opacity:1}}"}</style>
+      <style>{"@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap'); *::-webkit-scrollbar{height:8px;width:8px}*::-webkit-scrollbar-thumb{background:" + T.line + ";border-radius:8px} input::placeholder{color:" + T.faint + "} @keyframes ppFade{from{opacity:0}to{opacity:1}} @keyframes ppPop{0%{transform:scale(.55);opacity:0}60%{opacity:1}100%{transform:scale(1);opacity:1}}"}</style>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid " + T.lineSoft, background: T.board }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", paddingTop: "max(16px, env(safe-area-inset-top))", borderBottom: "1px solid " + T.lineSoft, background: T.board, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: T.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><Guitar size={19} color={T.accentInk} /></div>
-          <div><div style={{ fontFamily: DISP, fontWeight: 800, fontSize: 18, letterSpacing: ".2px" }}>Pedal Planner</div><div style={{ fontFamily: MONO, fontSize: 10, color: T.faint }}>{persistent ? "saved on this device" : "in-session only"}</div></div>
+          <div style={{ fontFamily: DISP, fontWeight: 800, fontSize: 18, letterSpacing: ".2px" }}>Pedal Planner</div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>{[["gigs", "Gigs"], ["gear", "Gear"], ["presets", "Presets"]].map(([k, l]) => <button key={k} onClick={() => { setTab(k); setOpenGig(null); setOpenDevice(null); }} style={{ background: tab === k ? T.panel2 : "transparent", border: "1.5px solid " + (tab === k ? T.line : "transparent"), color: tab === k ? T.text : T.dim, padding: "8px 14px", borderRadius: 9, cursor: "pointer", fontFamily: DISP, fontWeight: 600, fontSize: 13.5 }}>{l}</button>)}</div>
       </div>
 
-      <div style={{ padding: 20, maxWidth: 900, margin: "0 auto" }}>
+      <div style={{ padding: 20, paddingBottom: "max(20px, env(safe-area-inset-bottom))", maxWidth: 900, margin: "0 auto" }}>
         {!loaded ? <div style={{ color: T.dim }}>Loading…</div>
           : openGig ? <GigEditor gig={gigs.find(g => g.id === openGig)} devices={devices} presets={presets} setPresets={setPresets} updateGig={updateGig} setOpenGig={setOpenGig} setModal={setModal} setEditDevice={setEditDevice} flush={flush} />
             : tab === "gigs" ? <GigsList gigs={gigs} setGigs={setGigs} setOpenGig={setOpenGig} devices={devices} />
               : tab === "gear" ? (openDevice && devices.find(d => d.id === openDevice)
                 ? <GearDetail device={devices.find(d => d.id === openDevice)} updateDevice={updateDevice} setEditDevice={setEditDevice} onBack={() => setOpenDevice(null)} flush={flush} />
-                : <Library devices={devices} setDevices={setDevices} setEditDevice={setEditDevice} setModal={setModal} setOpenDevice={setOpenDevice} />)
+                : <Library devices={devices} setDevices={setDevices} setModal={setModal} onOpen={(id) => { setLastDevice(id); setOpenDevice(id); }} focusId={lastDevice} />)
                 : <Presets presets={presets} setPresets={setPresets} devices={devices} />}
       </div>
 
@@ -567,7 +631,7 @@ function PedalPicker({ devices, presets, onClose, onDone }) {
 
 /* ============================ GIGS LIST ============================ */
 function GigsList({ gigs, setGigs, setOpenGig }) {
-  const newGig = () => { const g = { id: uid(), name: "New gig", allDay: false, startDate: "", endDate: "", startTime: "", endTime: "", amps: [], boards: [{ id: uid(), name: "", pedals: [] }], photos: [] }; setGigs(gs => [g, ...gs]); setOpenGig(g.id); };
+  const newGig = () => { const g = { id: uid(), name: "", startDate: "", endDate: "", amps: [], boards: [{ id: uid(), name: "", pedals: [] }], photos: [] }; setGigs(gs => [g, ...gs]); setOpenGig(g.id); };
   const dup = (g) => { const c = JSON.parse(JSON.stringify(g)); c.id = uid(); c.name = g.name + " (copy)"; c.amps.forEach(a => a.iid = uid()); c.boards.forEach(b => { b.id = uid(); b.pedals.forEach(p => p.iid = uid()); }); c.photos = []; setGigs(gs => [c, ...gs]); };
   return (
     <div>
@@ -580,13 +644,13 @@ function GigsList({ gigs, setGigs, setOpenGig }) {
         {gigs.map(g => (
           <div key={g.id} style={{ background: T.panel, border: "1.5px solid " + T.line, borderRadius: 13, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div onClick={() => setOpenGig(g.id)} style={{ cursor: "pointer", flex: 1 }}>
-              <div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 17 }}>{g.name}</div>
+              <div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 17, color: g.name ? T.text : T.faint }}>{g.name || "Untitled gig"}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 7, color: T.dim, fontSize: 13, marginTop: 4, fontFamily: BODY }}><Calendar size={14} /><span>{fmtGig(g)}</span></div>
               <div style={{ color: T.faint, fontSize: 12, marginTop: 4, fontFamily: BODY }}>{g.amps.length} amp{g.amps.length !== 1 ? "s" : ""} · {g.boards.length} board{g.boards.length !== 1 ? "s" : ""}{g.photos?.length ? " · " + g.photos.length + " photo" + (g.photos.length !== 1 ? "s" : "") : ""}</div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <Btn small onClick={() => dup(g)}><Copy size={14} /> Duplicate</Btn>
-              <Btn small kind="danger" onClick={() => { (g.photos || []).forEach(p => delKey("pp2_photo_" + p.id)); setGigs(gs => gs.filter(x => x.id !== g.id)); }}><Trash2 size={14} /></Btn>
+              <Btn small kind="danger" onClick={() => { if (window.confirm("Delete " + (g.name || "this gig") + "? This can't be undone.")) { (g.photos || []).forEach(p => delKey("pp2_photo_" + p.id)); setGigs(gs => gs.filter(x => x.id !== g.id)); } }}><Trash2 size={14} /></Btn>
             </div>
           </div>
         ))}
@@ -640,24 +704,20 @@ function GigEditor({ gig, devices, presets, setPresets, updateGig, setOpenGig, s
       </div>
 
       <div style={{ background: T.panel, border: "1.5px solid " + T.line, borderRadius: 14, padding: 16, marginBottom: 18 }}>
-        <Field label="Gig name"><input style={{ ...inputStyle, fontFamily: DISP, fontSize: 18, fontWeight: 700 }} value={gig.name} onChange={e => set("name", e.target.value)} placeholder="e.g. RB Weekend" /></Field>
+        <input style={{ ...inputStyle, fontFamily: DISP, fontSize: 18, fontWeight: 700 }} value={gig.name} onChange={e => set("name", e.target.value)} placeholder="Gig name" />
         <div style={{ marginTop: 14 }}>
-          <Label>when</Label>
+          <Label>date</Label>
           <button onClick={() => setWhenOpen(o => !o)} style={{ ...inputStyle, marginTop: 5, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: BODY }}>
             <Calendar size={15} color={T.dim} /> {fmtGig(gig)}
           </button>
           {whenOpen && (
-            <div style={{ marginTop: 10, background: T.panel2, border: "1.5px solid " + T.line, borderRadius: 11, padding: 13 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><input type="checkbox" id="ad" checked={gig.allDay} onChange={e => set("allDay", e.target.checked)} /><label htmlFor="ad" style={{ fontSize: 13, color: T.text, fontFamily: BODY }}>All-day</label></div>
-              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: "10px 10px", alignItems: "center" }}>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: T.dim }}>starts</span>
-                <input type="date" style={inputStyle} value={gig.startDate} onChange={e => set("startDate", e.target.value)} />
-                {!gig.allDay ? <input type="time" style={inputStyle} value={gig.startTime} onChange={e => set("startTime", e.target.value)} /> : <span />}
-                <span style={{ fontFamily: MONO, fontSize: 11, color: T.dim }}>ends</span>
-                <input type="date" style={inputStyle} value={gig.endDate} onChange={e => set("endDate", e.target.value)} />
-                {!gig.allDay ? <input type="time" style={inputStyle} value={gig.endTime} onChange={e => set("endTime", e.target.value)} /> : <span />}
+            <div style={{ marginTop: 10, background: T.panel2, border: "1.5px solid " + T.line, borderRadius: 13, padding: 14 }}>
+              <MiniCal start={gig.startDate} end={gig.endDate} onPick={(s, e) => { set("startDate", s); set("endDate", e); }} />
+              <div style={{ fontSize: 11.5, color: T.faint, fontFamily: BODY, marginTop: 10, lineHeight: 1.4 }}>One tap for a single day. Tap a later day to span a run of shows.</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                {gig.startDate && <Btn small kind="quiet" onClick={() => { set("startDate", ""); set("endDate", ""); }}>Clear</Btn>}
+                <Btn small kind="primary" onClick={() => setWhenOpen(false)} style={{ marginLeft: "auto" }}><Check size={13} /> Done</Btn>
               </div>
-              <Btn small onClick={() => setWhenOpen(false)} style={{ marginTop: 12 }}><Check size={13} /> Done</Btn>
             </div>
           )}
         </div>
@@ -665,7 +725,7 @@ function GigEditor({ gig, devices, presets, setPresets, updateGig, setOpenGig, s
 
       <Sec title="Photos" onAdd={() => fileRef.current?.click()} addLabel="Add">
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { addPhotos(Array.from(e.target.files || [])); e.target.value = ""; }} />
-        {(!gig.photos || gig.photos.length === 0) && <Empty text="Photos of your rig, for reference while you dial it in." />}
+        {(!gig.photos || gig.photos.length === 0) && <Empty text="No photos." />}
         {gig.photos?.length > 0 && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {gig.photos.map(p => (
@@ -680,7 +740,7 @@ function GigEditor({ gig, devices, presets, setPresets, updateGig, setOpenGig, s
 
       {lightbox && (
         <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, animation: "ppFade .18s ease-out" }}>
-          <img src={lightbox} alt="" style={{ maxWidth: "94vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 8, animation: "ppPop .24s cubic-bezier(.2,.85,.3,1.15)" }} />
+          <img src={lightbox} alt="" style={{ maxWidth: "94vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 8, animation: "ppPop .34s cubic-bezier(.2,.8,.2,1.1)" }} />
           <button onClick={() => setLightbox(null)} style={{ position: "absolute", top: 16, right: 16, background: "rgba(20,22,26,.85)", border: "1.5px solid rgba(255,255,255,.25)", borderRadius: "50%", width: 42, height: 42, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={22} color="#fff" /></button>
         </div>
       )}
@@ -701,7 +761,7 @@ function GigEditor({ gig, devices, presets, setPresets, updateGig, setOpenGig, s
           {board.pedals.length === 0 && <Empty text="No pedals on this board." />}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {board.pedals.map((inst, idx) => { const commit = (fn) => updPedal(board.id, inst.iid, fn); const dev = deviceOf(inst, devices); if (!dev) return null;
-              return <InstanceCard key={inst.iid} device={dev} inst={inst} displayName={dev.name} accent={T.accent} isPedal order={idx + 1} count={board.pedals.length} onMove={(d) => movePedal(board.id, idx, d)} onToggleEngaged={() => commit(x => ({ ...x, engaged: !x.engaged }))} onRename={(v) => commit(x => ({ ...x, label: v }))} onEdit={() => editInstance(dev, inst, commit)} onDelete={() => delPedal(board.id, inst.iid)}
+              return <InstanceCard key={inst.iid} device={dev} inst={inst} displayName={dev.name} accent={T.accent} isPedal order={idx + 1} count={board.pedals.length} onMove={(d) => movePedal(board.id, idx, d)} onRename={(v) => commit(x => ({ ...x, label: v }))} onEdit={() => editInstance(dev, inst, commit)} onDelete={() => delPedal(board.id, inst.iid)}
                 onSavePreset={() => { const name = window.prompt("Save these " + dev.name + " settings as:", dev.name + " — " + gig.name); if (name) setPresets(ps => [...ps, { id: uid(), name, deviceId: inst.deviceId, vals: JSON.parse(JSON.stringify(inst.vals)), knobStyle: inst.knobStyle, styleOverrides: inst.styleOverrides }]); }}
                 handlers={mkHandlers(commit)} />; })}
           </div>
@@ -724,24 +784,41 @@ function Sec({ title, titleNode, onAdd, addLabel = "Add", extra, children }) {
 }
 
 /* ============================ LIBRARY ============================ */
-function Library({ devices, setDevices, setEditDevice, setModal, setOpenDevice }) {
-  const dup = (d) => { const c = JSON.parse(JSON.stringify(d)); c.id = uid(); c.preloaded = false; c.name = d.name + " (copy)"; c.controls = c.controls.map(x => ({ ...x, id: uid() })); setDevices(ds => [...ds, c]); };
+function GearGlyph({ d }) {
+  const k = (d.controls || []).find(c => c.kind === "knob");
+  const kc = (k && k.color) || d.knob || "#eef1f4";
+  const design = (k && k.design) || "line";
+  const body = design === "knurled" ? "#cfd3d6" : "#1b1d22";
+  return (
+    <div style={{ width: 34, height: 34, borderRadius: 8, background: d.color, border: "1px solid rgba(255,255,255,.16)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <svg width="22" height="22" viewBox="0 0 100 100">
+        {design === "chickenhead"
+          ? <><circle cx="50" cy="50" r="16" fill={body} /><path d="M50 14 L60 40 Q50 36 40 40 Z" fill={kc} /></>
+          : <><circle cx="50" cy="50" r="30" fill={body} stroke="#0009" strokeWidth="3" />{design === "dome" ? <circle cx="50" cy="26" r="6" fill={kc} /> : <rect x="46.5" y="16" width="7" height="24" rx="3" fill={kc} />}</>}
+      </svg>
+    </div>
+  );
+}
+function Library({ devices, setDevices, setModal, onOpen, focusId }) {
+  useEffect(() => { if (focusId) { const el = document.getElementById("gearcard_" + focusId); if (el) el.scrollIntoView({ block: "center" }); } }, []);
+  const dup = (d) => { if (!window.confirm("Duplicate " + d.name + "?")) return; const c = JSON.parse(JSON.stringify(d)); c.id = uid(); c.name = d.name + " (copy)"; c.controls = c.controls.map(x => ({ ...x, id: uid() })); setDevices(ds => [...ds, c]); };
+  const remove = (d) => { if (window.confirm("Delete " + d.name + "? This can't be undone.")) setDevices(ds => ds.filter(x => x.id !== d.id)); };
   const Card = (d) => (
-    <div key={d.id} style={{ background: T.panel, border: "1.5px solid " + T.line, borderRadius: 13, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-      <div onClick={() => setOpenDevice(d.id)} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: d.color, border: "1px solid rgba(255,255,255,.14)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><div style={{ width: 11, height: 11, borderRadius: "50%", background: d.knob }} /></div>
-        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 14 }}>{d.name}</div><div style={{ fontFamily: MONO, fontSize: 11, color: T.faint }}>{d.controls.filter(c => c.kind !== "switch").length} knobs{d.type === "amp" ? " · " + d.inputs.length + " inputs" : ""}{d.isHead ? " · head" : ""}{d.preloaded ? " · preloaded" : ""}</div></div>
+    <div key={d.id} id={"gearcard_" + d.id} style={{ background: T.panel, border: "1.5px solid " + T.line, borderRadius: 13, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+      <div onClick={() => onOpen(d.id)} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+        <GearGlyph d={d} />
+        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 14 }}>{d.name}</div><div style={{ fontFamily: MONO, fontSize: 11, color: T.faint }}>{d.controls.filter(c => c.kind !== "switch").length} knobs{d.type === "amp" ? " · " + d.inputs.length + " inputs" : ""}</div></div>
         <ChevronRight size={16} color={T.faint} />
       </div>
       <Btn small kind="quiet" onClick={() => dup(d)}><Copy size={13} /></Btn>
-      <Btn small kind="quiet" onClick={() => setDevices(ds => ds.filter(x => x.id !== d.id))}><Trash2 size={13} color={T.red} /></Btn>
+      <Btn small kind="quiet" onClick={() => remove(d)}><Trash2 size={13} color={T.red} /></Btn>
     </div>
   );
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
         <div style={{ fontFamily: DISP, fontSize: 22, fontWeight: 800 }}>Gear</div>
-        <div style={{ display: "flex", gap: 6 }}><Btn small onClick={() => { if (window.confirm("Reset library to preloaded gear? Custom devices are removed.")) setDevices(DEFAULTS); }}><RotateCcw size={13} /> Reset</Btn><Btn kind="primary" onClick={() => setModal({ kind: "newType" })}><Plus size={16} /> New device</Btn></div>
+        <Btn kind="primary" onClick={() => setModal({ kind: "newType" })}><Plus size={16} /> New device</Btn>
       </div>
       <div style={{ marginBottom: 9 }}><Label color={T.accent}>amps</Label></div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>{devices.filter(d => d.type === "amp").map(Card)}</div>
@@ -783,59 +860,95 @@ function GearDetail({ device, updateDevice, setEditDevice, onBack, flush }) {
         </div>
         <Controls device={device} inst={inst} accent={T.accent} handlers={handlers} inputs={!isPedal ? device.inputs : []} selectedInput={inst.input} onInput={(v) => commit(i => ({ ...i, input: v }))} />
       </div>
-      <div style={{ color: T.faint, fontSize: 12, marginTop: 10, fontFamily: BODY }}>This is the master. What you set here is the starting point when you add {device.name} to a gig. Changing it inside a gig only affects that gig. Use Edit layout to add or rename knobs.</div>
+      <div style={{ color: T.faint, fontSize: 12, marginTop: 10, fontFamily: BODY }}>Saved here as the default for new gigs.</div>
     </div>
   );
 }
 
 /* ============================ DEVICE / INSTANCE EDITOR ============================ */
+function ColorRow({ value, onChange, palette }) {
+  const custom = !palette.includes(value);
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      {palette.map(c => <Chip key={c} c={c} on={value === c} onClick={() => onChange(c)} />)}
+      <label title="Custom color" style={{ width: 27, height: 27, borderRadius: 7, cursor: "pointer", border: custom ? "2px solid " + T.accent : "1px dashed " + T.line, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", background: custom ? value : "transparent" }}>
+        <input type="color" value={/^#([0-9a-f]{6})$/i.test(value || "") ? value : "#888888"} onChange={e => onChange(e.target.value)} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: "none" }} />
+        {!custom && <Plus size={13} color={T.dim} />}
+      </label>
+    </div>
+  );
+}
 function DeviceEditor({ draft, onSave, onCancel }) {
-  const [d, setD] = useState(draft);
+  const [d, setD] = useState(() => ({ ...draft, sections: draft.sections || Array.from(new Set((draft.controls || []).map(c => c.section).filter(Boolean))) }));
+  const [newSec, setNewSec] = useState("");
   const set = (k, v) => setD(p => ({ ...p, [k]: v }));
-  const colors = ["#16181d", "#b7bcc2", "#1f3b2c", "#f1ede4", "#2f6fb0", "#c9a23a", "#f2c14e", "#e8731f", "#c43b32", "#2a8fa0", "#1f5fa0", "#cfd3d6"];
-  const knobs = ["#e7e0cd", "#1c1e23", "#eef1f4", "#d23b2f", "#3f8fdc", "#ef7d2b", "#f0892c"];
-  const addCtrl = (kind) => setD(p => ({ ...p, controls: [...p.controls, kind === "knob" ? K(uid(), "New knob") : kind === "switch" ? SW(uid(), "New switch", ["Off", "On"]) : kind === "selector" ? SEL(uid(), "Selector", ["A", "B", "C"]) : CON(uid(), "Stacked", "Outer", "Inner")] }));
   const upd = (id, k, v) => setD(p => ({ ...p, controls: p.controls.map(c => c.id === id ? { ...c, [k]: v } : c) }));
   const del = (id) => setD(p => ({ ...p, controls: p.controls.filter(c => c.id !== id) }));
+  const addCtrl = (kind) => setD(p => ({ ...p, controls: [...p.controls, kind === "knob" ? K(uid(), "New knob") : kind === "switch" ? SW(uid(), "New switch", ["Off", "On"]) : kind === "selector" ? SEL(uid(), "Selector", ["A", "B", "C"]) : CON(uid(), "Stacked", "Outer", "Inner")] }));
+  const addSection = () => { const n = newSec.trim(); if (n && !d.sections.includes(n)) setD(p => ({ ...p, sections: [...p.sections, n] })); setNewSec(""); };
+  const removeSection = (n) => setD(p => ({ ...p, sections: p.sections.filter(s => s !== n), controls: p.controls.map(c => c.section === n ? { ...c, section: "" } : c) }));
+  const encColors = ["#16181d", "#b7bcc2", "#1f3b2c", "#f1ede4", "#2f6fb0", "#c9a23a", "#e8731f", "#c43b32", "#2a8fa0"];
+  const knobColors = ["#1c1e23", "#eef1f4", "#e7e0cd", "#d23b2f", "#3f8fdc", "#ef7d2b", "#c9a53f"];
+  const selStyle = { background: T.bg, color: T.text, border: "1.5px solid " + T.line, borderRadius: 8, padding: "8px 9px", fontFamily: BODY, fontSize: 16, outline: "none" };
   return (
     <div style={{ position: "fixed", inset: 0, background: T.bg, zIndex: 60, overflowY: "auto" }}>
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: 24, fontFamily: BODY }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: 24, paddingTop: "max(20px, env(safe-area-inset-top))", fontFamily: BODY }}>
         <style>{"@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');"}</style>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div><Label color={T.accent}>{d.type}</Label><div style={{ fontFamily: DISP, fontSize: 22, fontWeight: 800 }}>{draft.name ? "Edit gear" : "New " + d.type}</div></div>
+          <div style={{ fontFamily: DISP, fontSize: 22, fontWeight: 800 }}>{draft.name ? "Edit gear" : "New " + d.type}</div>
           <div style={{ display: "flex", gap: 8 }}><Btn onClick={onCancel}>Cancel</Btn><Btn kind="primary" disabled={!d.name.trim()} onClick={() => onSave(d)}><Check size={15} /> Save</Btn></div>
         </div>
         <div style={{ background: T.panel, border: "1.5px solid " + T.line, borderRadius: 14, padding: 16, marginBottom: 16 }}>
-          <Field label="Name"><input style={inputStyle} value={d.name} onChange={e => set("name", e.target.value)} placeholder={d.type === "amp" ? "e.g. Vox AC30" : "e.g. Strymon Flint"} /></Field>
+          <input style={{ ...inputStyle, fontFamily: DISP, fontSize: 17, fontWeight: 700 }} value={d.name} onChange={e => set("name", e.target.value)} placeholder={d.type === "amp" ? "Amp name" : "Pedal name"} />
           <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 14 }}>
             <div><div style={{ marginBottom: 6 }}><Label>type</Label></div><div style={{ display: "inline-flex", gap: 3, background: T.bg, padding: 3, borderRadius: 9, border: "1.5px solid " + T.line }}>{["amp", "pedal"].map(t => <button key={t} onClick={() => set("type", t)} style={{ border: "none", cursor: "pointer", fontFamily: DISP, fontWeight: 600, fontSize: 12.5, padding: "6px 12px", borderRadius: 7, textTransform: "capitalize", background: d.type === t ? T.accent : "transparent", color: d.type === t ? T.accentInk : T.dim }}>{t}</button>)}</div></div>
-            <div><div style={{ marginBottom: 6 }}><Label>knobs</Label></div><div style={{ display: "inline-flex", gap: 3, background: T.bg, padding: 3, borderRadius: 9, border: "1.5px solid " + T.line }}>{[["default", "Default"], ["clock", "Clock"], ["numbered", "Numbered"]].map(([s, l]) => <button key={s} onClick={() => set("style", s)} style={{ border: "none", cursor: "pointer", fontFamily: DISP, fontWeight: 600, fontSize: 12.5, padding: "6px 11px", borderRadius: 7, background: d.style === s ? T.accent : "transparent", color: d.style === s ? T.accentInk : T.dim }}>{l}</button>)}</div></div>
-            {d.type === "amp" && <div style={{ display: "flex", alignItems: "flex-end", gap: 8, paddingBottom: 4 }}><input type="checkbox" id="ih" checked={d.isHead} onChange={e => set("isHead", e.target.checked)} /><label htmlFor="ih" style={{ fontSize: 13, color: T.dim }}>Head</label></div>}
+            <div><div style={{ marginBottom: 6 }}><Label>knobs read as</Label></div><div style={{ display: "inline-flex", gap: 3, background: T.bg, padding: 3, borderRadius: 9, border: "1.5px solid " + T.line }}>{[["default", "Default"], ["clock", "Clock"], ["numbered", "Numbered"]].map(([s, l]) => <button key={s} onClick={() => set("style", s)} style={{ border: "none", cursor: "pointer", fontFamily: DISP, fontWeight: 600, fontSize: 12.5, padding: "6px 11px", borderRadius: 7, background: d.style === s ? T.accent : "transparent", color: d.style === s ? T.accentInk : T.dim }}>{l}</button>)}</div></div>
           </div>
           <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 16 }}>
-            <div><div style={{ marginBottom: 6 }}><Label>enclosure / face</Label></div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{colors.map(c => <Chip key={c} c={c} on={d.color === c} onClick={() => set("color", c)} />)}</div></div>
-            <div><div style={{ marginBottom: 6 }}><Label>knob color</Label></div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{knobs.map(c => <Chip key={c} c={c} on={d.knob === c} onClick={() => set("knob", c)} />)}</div></div>
+            <div><div style={{ marginBottom: 6 }}><Label>{d.type === "pedal" ? "enclosure" : "face"}</Label></div><ColorRow value={d.color} onChange={v => set("color", v)} palette={encColors} /></div>
+            <div><div style={{ marginBottom: 6 }}><Label>default knob color</Label></div><ColorRow value={d.knob} onChange={v => set("knob", v)} palette={knobColors} /></div>
           </div>
         </div>
         {d.type === "amp" && (
           <Block title="Input jacks" onAdd={() => set("inputs", [...d.inputs, "Input " + (d.inputs.length + 1)])}>
             {d.inputs.map((inp, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}><input style={{ ...inputStyle, flex: 1 }} value={inp} onChange={e => set("inputs", d.inputs.map((x, j) => j === i ? e.target.value : x))} /><Btn small kind="danger" onClick={() => set("inputs", d.inputs.filter((_, j) => j !== i))}><X size={14} /></Btn></div>)}
-            {!d.inputs.length && <Empty text="Add the input jacks this amp has." />}
+            {!d.inputs.length && <Empty text="No inputs." />}
           </Block>
         )}
+        <div style={{ background: T.panel, border: "1.5px solid " + T.line, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+          <div style={{ marginBottom: 10 }}><Label color={T.dim}>Sections (optional)</Label></div>
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+            {d.sections.map(s => <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: T.panel2, border: "1.5px solid " + T.line, borderRadius: 8, padding: "5px 6px 5px 10px", fontFamily: DISP, fontWeight: 600, fontSize: 12.5 }}>{s}<X size={13} color={T.faint} style={{ cursor: "pointer" }} onClick={() => removeSection(s)} /></span>)}
+            <input value={newSec} onChange={e => setNewSec(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSection(); } }} placeholder="Add section…" style={{ ...inputStyle, width: 130 }} />
+            {newSec.trim() && <Btn small onClick={addSection}><Plus size={13} /></Btn>}
+          </div>
+          <div style={{ color: T.faint, fontSize: 11.5, marginTop: 9, fontFamily: BODY }}>Group controls like a real panel (Normal / Vibrato). Leave empty for a single row, then pick a section per knob below.</div>
+        </div>
         <Block title="Controls" addNode={<div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{[["knob", "Knob"], ["selector", "Selector"], ["switch", "Switch"], ["concentric", "Stacked"]].map(([k, l]) => <Btn key={k} small onClick={() => addCtrl(k)}><Plus size={12} /> {l}</Btn>)}</div>}>
           {d.controls.map(c => (
-            <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: T.panel2, padding: 9, borderRadius: 9 }}>
-              <span style={{ fontFamily: MONO, fontSize: 10, color: T.accent, width: 58 }}>{c.kind === "concentric" ? "stacked" : c.kind}</span>
-              {c.kind === "concentric" ? <><input style={{ ...inputStyle, flex: "1 1 90px" }} value={c.outer} onChange={e => upd(c.id, "outer", e.target.value)} placeholder="Outer" /><input style={{ ...inputStyle, flex: "1 1 90px" }} value={c.inner} onChange={e => upd(c.id, "inner", e.target.value)} placeholder="Inner" /></> : <input style={{ ...inputStyle, flex: "2 1 110px" }} value={c.name} onChange={e => upd(c.id, "name", e.target.value)} placeholder="Name" />}
-              {(c.kind === "switch" || c.kind === "selector") && <input style={{ ...inputStyle, flex: "2 1 150px" }} value={c.options.join(", ")} onChange={e => upd(c.id, "options", e.target.value.split(",").map(x => x.trim()).filter(Boolean))} placeholder="Positions, comma separated" />}
-              <input style={{ ...inputStyle, flex: "1 1 80px" }} value={c.section || ""} onChange={e => upd(c.id, "section", e.target.value)} placeholder="Section" />
-              <Btn small kind="danger" onClick={() => del(c.id)}><X size={14} /></Btn>
+            <div key={c.id} style={{ background: T.panel2, padding: 11, borderRadius: 10, display: "flex", flexDirection: "column", gap: 9 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontFamily: MONO, fontSize: 9.5, color: T.accent, width: 50 }}>{c.kind === "concentric" ? "stacked" : c.kind}</span>
+                {c.kind === "concentric"
+                  ? <><input style={{ ...inputStyle, flex: "1 1 80px" }} value={c.outer} onChange={e => upd(c.id, "outer", e.target.value)} placeholder="Outer" /><input style={{ ...inputStyle, flex: "1 1 80px" }} value={c.inner} onChange={e => upd(c.id, "inner", e.target.value)} placeholder="Inner" /></>
+                  : <input style={{ ...inputStyle, flex: "2 1 110px" }} value={c.name} onChange={e => upd(c.id, "name", e.target.value)} placeholder="Name" />}
+                {d.sections.length > 0 && <select value={c.section || ""} onChange={e => upd(c.id, "section", e.target.value)} style={selStyle}><option value="">No section</option>{d.sections.map(s => <option key={s} value={s}>{s}</option>)}</select>}
+                <Btn small kind="danger" onClick={() => del(c.id)}><X size={14} /></Btn>
+              </div>
+              {(c.kind === "switch" || c.kind === "selector") && <input style={{ ...inputStyle }} value={c.options.join(", ")} onChange={e => upd(c.id, "options", e.target.value.split(",").map(x => x.trim()).filter(Boolean))} placeholder="Positions, comma separated" />}
+              {(c.kind === "knob" || c.kind === "concentric") && (
+                <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap" }}>
+                  {c.kind === "knob" && <div><div style={{ marginBottom: 4 }}><Label>default look</Label></div><select value={c.design || "line"} onChange={e => upd(c.id, "design", e.target.value)} style={selStyle}>{KNOB_DESIGNS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>}
+                  {c.kind === "knob" && <div><div style={{ marginBottom: 4 }}><Label>numbered look</Label></div><select value={c.skirt || "blackface"} onChange={e => upd(c.id, "skirt", e.target.value)} style={selStyle}>{SKIRT_DESIGNS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>}
+                  <div><div style={{ marginBottom: 4 }}><Label>color</Label></div><ColorRow value={c.color || d.knob} onChange={v => upd(c.id, "color", v)} palette={knobColors} /></div>
+                  {c.kind === "knob" && <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.dim, paddingBottom: 6, cursor: "pointer" }}><input type="checkbox" checked={!!c.pull} onChange={e => upd(c.id, "pull", e.target.checked)} /> Pull switch</label>}
+                  {c.kind === "knob" && c.pull && <input style={{ ...inputStyle, width: 110 }} value={c.pullLabel || ""} onChange={e => upd(c.id, "pullLabel", e.target.value)} placeholder="Pull label" />}
+                </div>
+              )}
             </div>
           ))}
-          {!d.controls.length && <Empty text="Add knobs, selector dials (DD-6 style), switches (2/3/4-way), or stacked/concentric knobs." />}
+          {!d.controls.length && <Empty text="Add knobs, switches, selector dials, or stacked (knob-in-knob) controls." />}
         </Block>
-        <div style={{ color: T.faint, fontSize: 12, marginTop: 8, fontFamily: BODY }}>Editing from inside a gig only changes this one — your library copy stays put. “Section” groups controls (Normal / Vibrato, OCD / Tremolo).</div>
       </div>
     </div>
   );
@@ -854,7 +967,7 @@ function Block({ title, onAdd, addNode, children }) {
 function Presets({ presets, setPresets, devices }) {
   return (
     <div>
-      <div style={{ marginBottom: 18 }}><div style={{ fontFamily: DISP, fontSize: 22, fontWeight: 800 }}>Presets</div><div style={{ color: T.dim, fontSize: 13, marginTop: 4, fontFamily: BODY }}>Saved settings for a single pedal. Save one from a pedal's bookmark in a gig, then reuse it anywhere.</div></div>
+      <div style={{ marginBottom: 18 }}><div style={{ fontFamily: DISP, fontSize: 22, fontWeight: 800 }}>Presets</div><div style={{ color: T.dim, fontSize: 13, marginTop: 4, fontFamily: BODY }}>Saved pedal settings you can reuse.</div></div>
       {presets.length === 0 && <Empty text="No presets yet." />}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {presets.map(p => { const dev = devices.find(d => d.id === p.deviceId); return (
